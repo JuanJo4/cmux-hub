@@ -1,6 +1,0 @@
-http://hub.diff {
-  reverse_proxy 127.0.0.1:4700 {
-    header_up Host   127.0.0.1:4700
-    header_up Origin http://127.0.0.1:4700
-  }
-}
