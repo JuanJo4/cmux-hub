@@ -119,6 +119,54 @@ Security model (hub mode):
 To keep the hub running permanently on macOS, either leave `bun run hub` in a
 terminal or wrap it in a `launchd` agent.
 
+### Optional: a friendly local domain (`http://hub.diff`)
+
+If you'd rather open `http://hub.diff` than `http://127.0.0.1:4700`, front the hub
+with a small reverse proxy. A plain `/etc/hosts` alias is **not** enough on its own:
+the hub's DNS-rebinding and strict-origin defenses (see [Security](#security)) reject
+any request whose `Host` isn't `localhost`/`127.0.0.1` or whose `Origin` isn't the
+hub's own origin — so a custom hostname gets a `403` on the first request, and live
+updates (`/ws`) and comments/actions break. The proxy fixes this by rewriting the
+`Host` and `Origin` headers back to what the hub expects. [Caddy](https://caddyserver.com)
+keeps this to a few lines (it also upgrades the `/ws` WebSocket transparently).
+
+1. **Point the name at loopback** — add to `/etc/hosts` (needs `sudo` to edit):
+
+   ```
+   127.0.0.1  hub.diff
+   ```
+
+   Any made-up TLD works, since the name resolves locally. `.diff` is memorable for a
+   diff viewer; if you want a TLD that can never collide with a real one, `.test` is
+   reserved by the IETF for exactly this.
+
+2. **Install Caddy** — `brew install caddy`.
+
+3. **Write a Caddyfile** (e.g. `~/hub-diff.Caddyfile`):
+
+   ```
+   http://hub.diff {
+       reverse_proxy 127.0.0.1:4700 {
+           header_up Host   127.0.0.1:4700
+           header_up Origin http://127.0.0.1:4700
+       }
+   }
+   ```
+
+   - `http://` forces plain HTTP on port 80 (no TLS cert to manage for a local name).
+   - `header_up Host …` — Caddy passes the client's `Host` through by default; this
+     overrides it so the hub's Host check passes.
+   - `header_up Origin …` — makes POST writes (comments/actions) **and** the `/ws`
+     upgrade satisfy the strict-origin check. This line is the one you can't skip.
+
+4. **Run the proxy** (port 80 needs elevated privileges on macOS):
+
+   ```bash
+   sudo caddy run --config ~/hub-diff.Caddyfile
+   ```
+
+5. **Start the hub as usual** (`bun run hub`) and open **`http://hub.diff`** — no port.
+
 https://github.com/user-attachments/assets/f5fbfd8b-6473-4f83-882e-967a5ca33205
 
 ![cmux-hub with cmux](docs/img/cmux-hub-overview.png)
