@@ -6,6 +6,7 @@ import { CommitList } from "./CommitList.tsx";
 import { api } from "../lib/api.ts";
 import { handleDelivery } from "../lib/delivery.ts";
 import { useReviewQueue } from "../hooks/useReviewQueue.tsx";
+import { orderFilesByTree, visibleDiffFiles } from "../lib/file-tree.ts";
 import { useToast } from "./Toast.tsx";
 import type { CommentMode } from "./CommentForm.tsx";
 
@@ -72,14 +73,14 @@ export function DiffView({
     [addToReview, showToast],
   );
 
+  // Tree display order (like GitHub), so the cards follow the sidebar.
+  const visibleFiles = useMemo(() => orderFilesByTree(visibleDiffFiles(diff)), [diff]);
+
   // Total added/deleted line counts across visible files
   const totals = useMemo(() => {
     let additions = 0;
     let deletions = 0;
-    let files = 0;
-    for (const file of diff) {
-      if (file.generated) continue;
-      files++;
+    for (const file of visibleFiles) {
       for (const hunk of file.hunks) {
         for (const line of hunk.lines) {
           if (line.type === "add") additions++;
@@ -87,8 +88,8 @@ export function DiffView({
         }
       }
     }
-    return { additions, deletions, files };
-  }, [diff]);
+    return { additions, deletions, files: visibleFiles.length };
+  }, [visibleFiles]);
 
   if (loading && diff.length === 0) {
     return (
@@ -154,17 +155,15 @@ export function DiffView({
           <span className="text-[#f85149] font-mono">−{totals.deletions}</span>
         </div>
       )}
-      {diff
-        .filter((file) => !file.generated)
-        .map((file, idx) => (
-          <DiffFile
-            key={`${file.newPath}-${idx}`}
-            file={file}
-            onComment={handleComment}
-            prComments={prComments.filter((c) => c.path === file.newPath)}
-            pendingComments={pending.filter((c) => c.file === file.newPath)}
-          />
-        ))}
+      {visibleFiles.map((file, idx) => (
+        <DiffFile
+          key={`${file.newPath}-${idx}`}
+          file={file}
+          onComment={handleComment}
+          prComments={prComments.filter((c) => c.path === file.newPath)}
+          pendingComments={pending.filter((c) => c.file === file.newPath)}
+        />
+      ))}
     </div>
   );
 }

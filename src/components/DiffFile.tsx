@@ -538,7 +538,7 @@ export function DiffFile({ file, onComment, prComments = [], pendingComments = [
       : "bg-[#9e6a03] text-white";
 
   return (
-    <div data-testid="diff-file" className="mb-4">
+    <div data-testid="diff-file" data-file-path={file.newPath} className="mb-4">
       <div
         className="flex items-center gap-2 px-4 py-2 bg-[#161b22] border-b border-[#30363d] cursor-pointer hover:bg-[#1c2128] sticky top-0 z-10 -mx-4"
         onClick={() => setCollapsed(!collapsed)}

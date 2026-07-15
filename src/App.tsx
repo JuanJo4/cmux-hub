@@ -1,7 +1,8 @@
-import React from "react";
+import React, { useMemo, useRef } from "react";
 import { DiffView } from "./components/DiffView.tsx";
 import { Toolbar } from "./components/Toolbar.tsx";
 import { CIStatus } from "./components/CIStatus.tsx";
+import { FileTreeSidebar } from "./components/FileTreeSidebar.tsx";
 import { PlanView } from "./components/PlanView.tsx";
 import { ReviewView } from "./components/ReviewView.tsx";
 import { LauncherStatus } from "./components/LauncherStatus.tsx";
@@ -14,6 +15,7 @@ import { useStatus } from "./hooks/useStatus.ts";
 import { usePRData } from "./hooks/usePRData.ts";
 import { useLauncher } from "./hooks/useLauncher.ts";
 import { ReviewQueueProvider } from "./hooks/useReviewQueue.tsx";
+import { visibleDiffFiles } from "./lib/file-tree.ts";
 import "./index.css";
 
 type RouteInfo = ReturnType<typeof useHashRoute>["route"];
@@ -42,6 +44,15 @@ function ProjectWorkspace({
     useStatus();
   const { prUrl, prTitle, prState, checks, prComments } = usePRData();
   const { hasLauncher, servers } = useLauncher();
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const visibleFiles = useMemo(() => visibleDiffFiles(diff), [diff]);
+  // Page "home" only reaches the workspace in single mode (hub home is
+  // intercepted at App level), where it renders the uncommitted diff.
+  const showSidebar =
+    (route.page === "home" || route.page === "diff" || route.page === "commit") &&
+    visibleFiles.length > 0 &&
+    !error;
 
   // Build hash paths, prefixed with the project in hub mode
   const projectPath = (sub: string) =>
@@ -74,44 +85,47 @@ function ProjectWorkspace({
         />
         {hasLauncher && servers.length > 0 && <LauncherStatus servers={servers} />}
         <div
-          className={`flex-1 overflow-auto px-4 pb-4 transition-opacity duration-200 ${refreshing ? "opacity-60" : "opacity-100"}`}
+          className={`flex-1 flex min-h-0 transition-opacity duration-200 ${refreshing ? "opacity-60" : "opacity-100"}`}
         >
-          {route.page === "plan" ? (
-            <div className="pt-4">
-              <PlanView onBack={() => navigate(projectPath(""))} hasTerminal={hasTerminal} />
-            </div>
-          ) : route.page === "review" ? (
-            <div className="pt-4">
-              <ReviewView onBack={() => navigate(projectPath(""))} hasTerminal={hasTerminal} />
-            </div>
-          ) : (
-            <>
-              {(checks.length > 0 || prUrl) && (
-                <div className="mt-4 mb-4">
-                  <CIStatus checks={checks} prTitle={prTitle} prUrl={prUrl} prState={prState} />
-                </div>
-              )}
-              <DiffView
-                diff={diff}
-                loading={loading}
-                error={error}
-                onRefresh={refresh}
-                hasTerminal={hasTerminal}
-                selectedCommit={selectedCommit}
-                showCommitList={route.page === "commits"}
-                hasUncommittedChanges={hasUncommittedChanges}
-                prComments={prComments.filter((c) => !c.isResolved)}
-                onSelectCommit={(commit) => {
-                  navigate(projectPath(`commit/${commit.hash}`));
-                  selectCommit(commit);
-                }}
-                onClearCommit={() => {
-                  navigate(projectPath(""));
-                  clearCommit();
-                }}
-              />
-            </>
-          )}
+          {showSidebar && <FileTreeSidebar files={visibleFiles} scrollContainerRef={scrollRef} />}
+          <div ref={scrollRef} className="flex-1 min-w-0 overflow-auto px-4 pb-4">
+            {route.page === "plan" ? (
+              <div className="pt-4">
+                <PlanView onBack={() => navigate(projectPath(""))} hasTerminal={hasTerminal} />
+              </div>
+            ) : route.page === "review" ? (
+              <div className="pt-4">
+                <ReviewView onBack={() => navigate(projectPath(""))} hasTerminal={hasTerminal} />
+              </div>
+            ) : (
+              <>
+                {(checks.length > 0 || prUrl) && (
+                  <div className="mt-4 mb-4">
+                    <CIStatus checks={checks} prTitle={prTitle} prUrl={prUrl} prState={prState} />
+                  </div>
+                )}
+                <DiffView
+                  diff={diff}
+                  loading={loading}
+                  error={error}
+                  onRefresh={refresh}
+                  hasTerminal={hasTerminal}
+                  selectedCommit={selectedCommit}
+                  showCommitList={route.page === "commits"}
+                  hasUncommittedChanges={hasUncommittedChanges}
+                  prComments={prComments.filter((c) => !c.isResolved)}
+                  onSelectCommit={(commit) => {
+                    navigate(projectPath(`commit/${commit.hash}`));
+                    selectCommit(commit);
+                  }}
+                  onClearCommit={() => {
+                    navigate(projectPath(""));
+                    clearCommit();
+                  }}
+                />
+              </>
+            )}
+          </div>
         </div>
       </div>
     </ReviewQueueProvider>
