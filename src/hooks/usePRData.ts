@@ -56,6 +56,7 @@ export function usePRData() {
     prUrl: data?.pr?.url ?? null,
     prTitle: data?.pr?.title ?? null,
     prState: data?.pr?.state ?? null,
+    prNumber: data?.pr?.number ?? null,
     checks: data?.checks ?? [],
     prComments: data?.comments ?? [],
   };

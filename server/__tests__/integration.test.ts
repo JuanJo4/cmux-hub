@@ -36,6 +36,7 @@ function createFakeRunner(): { runner: CommandRunner; calls: string[][] } {
     if (key.includes("merge-base")) return "abc123\n";
     if (key.includes("diff --unified=3")) return FAKE_DIFF;
     if (key.includes("diff --name-only")) return "src/index.ts\n";
+    if (key.includes("ls-files --others")) return "";
     if (key.includes("branch -a")) return "main\nfeature/test\n";
     if (key.includes("status --porcelain")) return "M src/index.ts\n";
     if (key.includes("gh api repos/") && key.includes("/pulls") && !key.includes("reviews"))
@@ -166,6 +167,15 @@ describe("API integration", () => {
     const data = await res.json();
     expect(data.diff).toBeDefined();
     expect(data.base).toBeDefined();
+  });
+
+  test("GET /api/diff/uncommitted returns working-tree diff", async () => {
+    const res = await fetch(`${BASE_URL}/api/diff/uncommitted`, { headers: validHeaders() });
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.diff).toContain("diff --git");
+    expect(data.base).toBe("HEAD");
+    expect(data.includeUntracked).toBe(true);
   });
 
   test("GET /api/diff/files returns file list", async () => {

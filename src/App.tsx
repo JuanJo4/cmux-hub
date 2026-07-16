@@ -8,7 +8,7 @@ import { ReviewView } from "./components/ReviewView.tsx";
 import { LauncherStatus } from "./components/LauncherStatus.tsx";
 import { ProjectList } from "./components/ProjectList.tsx";
 import { ToastProvider } from "./components/Toast.tsx";
-import { useDiff } from "./hooks/useDiff.ts";
+import { useDiff, type DiffMode } from "./hooks/useDiff.ts";
 import { useWebSocket } from "./hooks/useWebSocket.ts";
 import { useHashRoute } from "./hooks/useHashRoute.ts";
 import { useStatus } from "./hooks/useStatus.ts";
@@ -30,19 +30,41 @@ function ProjectWorkspace({
   hubMode: boolean;
 }) {
   const {
+    branch,
+    projectName,
+    projectStatus,
+    hasTerminal,
+    actions,
+    hasPlan,
+    hasReview,
+    hasUncommittedChanges,
+    loading: statusLoading,
+    error: statusError,
+  } = useStatus();
+  // Default the diff view to the uncommitted changes when the working tree is
+  // dirty, otherwise fall back to the full branch/PR diff (nothing uncommitted
+  // to show). `null` defers the initial fetch until git status resolves; on a
+  // status error we default to "auto" so the diff still loads.
+  const defaultDiffMode: DiffMode | null = statusError
+    ? "auto"
+    : statusLoading
+      ? null
+      : hasUncommittedChanges
+        ? "uncommitted"
+        : "auto";
+  const {
     diff,
     loading,
     refreshing,
     error,
     refresh,
     selectedCommit,
-    hasUncommittedChanges,
+    mode,
     selectCommit,
     clearCommit,
-  } = useDiff();
-  const { branch, projectName, projectStatus, hasTerminal, actions, hasPlan, hasReview } =
-    useStatus();
-  const { prUrl, prTitle, prState, checks, prComments } = usePRData();
+    showUncommitted,
+  } = useDiff(defaultDiffMode);
+  const { prUrl, prTitle, prState, prNumber, checks, prComments } = usePRData();
   const { hasLauncher, servers } = useLauncher();
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -74,6 +96,7 @@ function ProjectWorkspace({
           actions={actions}
           prUrl={prUrl}
           prState={prState}
+          prNumber={prNumber}
           onShowProjects={hubMode ? () => navigate("/") : undefined}
           onShowDiff={() => {
             navigate(projectPath(""));
@@ -113,6 +136,7 @@ function ProjectWorkspace({
                   selectedCommit={selectedCommit}
                   showCommitList={route.page === "commits"}
                   hasUncommittedChanges={hasUncommittedChanges}
+                  mode={mode}
                   prComments={prComments.filter((c) => !c.isResolved)}
                   onSelectCommit={(commit) => {
                     navigate(projectPath(`commit/${commit.hash}`));
@@ -121,6 +145,10 @@ function ProjectWorkspace({
                   onClearCommit={() => {
                     navigate(projectPath(""));
                     clearCommit();
+                  }}
+                  onShowUncommitted={() => {
+                    navigate(projectPath(""));
+                    showUncommitted();
                   }}
                 />
               </>

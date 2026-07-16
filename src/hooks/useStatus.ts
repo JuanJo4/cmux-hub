@@ -20,5 +20,9 @@ export function useStatus() {
     hasPlan: data?.hasPlan ?? false,
     hasReview: data?.hasReview ?? false,
     hasLauncher: (data as Record<string, unknown> | null)?.hasLauncher === true,
+    // Working tree is dirty (staged, unstaged, or untracked). Derived from
+    // `git status --porcelain`, so it reflects actual uncommitted changes
+    // rather than "the branch differs from main".
+    hasUncommittedChanges: (data?.status ?? "").trim().length > 0,
   };
 }

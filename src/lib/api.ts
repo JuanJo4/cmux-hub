@@ -87,6 +87,15 @@ export const api = {
     }>("/api/diff/auto");
   },
 
+  getUncommittedDiff() {
+    return fetchJSON<{
+      diff: string;
+      files?: import("./diff-parser.ts").ParsedDiff;
+      base: string;
+      includeUntracked: boolean;
+    }>("/api/diff/uncommitted");
+  },
+
   getDiffFiles(base?: string, target?: string) {
     const params = new URLSearchParams();
     if (base) params.set("base", base);

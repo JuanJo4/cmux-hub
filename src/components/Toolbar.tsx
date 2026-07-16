@@ -16,6 +16,7 @@ type Props = {
   actions: MenuItem[];
   prUrl?: string | null;
   prState?: string | null;
+  prNumber?: number | null;
   onShowProjects?: () => void;
   onShowCommitList?: () => void;
   onShowPlan?: () => void;
@@ -181,6 +182,7 @@ export function Toolbar({
   actions,
   prUrl,
   prState,
+  prNumber,
   onShowProjects,
   onShowCommitList,
   onShowPlan,
@@ -236,9 +238,13 @@ export function Toolbar({
               target="_blank"
               rel="noopener noreferrer"
               className={`text-xs border rounded-full px-2 py-0.5 ml-1 hover:underline ${prStateColor(prState)}`}
-              title="Open pull request on GitHub"
+              title={
+                prNumber
+                  ? `Open pull request #${prNumber} on GitHub`
+                  : "Open pull request on GitHub"
+              }
             >
-              PR · {prState.toLowerCase()}
+              {prNumber ? `PR #${prNumber}` : "PR"} · {prState.toLowerCase()}
             </a>
           )}
           {onShowCommitList && (

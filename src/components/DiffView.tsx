@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo } from "react";
 import type { ParsedDiff } from "../lib/diff-parser.ts";
-import type { SelectedCommit } from "../hooks/useDiff.ts";
+import type { SelectedCommit, DiffMode } from "../hooks/useDiff.ts";
 import { DiffFile } from "./DiffFile.tsx";
 import { CommitList } from "./CommitList.tsx";
 import { api } from "../lib/api.ts";
@@ -30,9 +30,11 @@ type Props = {
   selectedCommit?: SelectedCommit | null;
   showCommitList?: boolean;
   hasUncommittedChanges?: boolean;
+  mode?: DiffMode;
   prComments?: PRComment[];
   onSelectCommit?: (commit: SelectedCommit) => void;
   onClearCommit?: () => void;
+  onShowUncommitted?: () => void;
 };
 
 export function DiffView({
@@ -43,9 +45,11 @@ export function DiffView({
   selectedCommit,
   showCommitList,
   hasUncommittedChanges,
+  mode,
   prComments = [],
   onSelectCommit,
   onClearCommit,
+  onShowUncommitted,
 }: Props) {
   const { addToReview, pending } = useReviewQueue();
   const { showToast } = useToast();
@@ -120,7 +124,7 @@ export function DiffView({
           onSelectCommit={onSelectCommit}
           showNoDiffMessage={false}
           hasUncommittedChanges={hasUncommittedChanges}
-          onShowUncommitted={onClearCommit}
+          onShowUncommitted={onShowUncommitted}
         />
       </div>
     );
@@ -146,6 +150,21 @@ export function DiffView({
             <span className="font-mono text-[#58a6ff]">{selectedCommit.hash}</span>{" "}
             {selectedCommit.message}
           </span>
+        </div>
+      )}
+      {!selectedCommit && mode === "uncommitted" && (
+        <div className="flex items-center gap-3 px-4 py-2 bg-[#1a1500] border border-[#d29922]/40 rounded-md">
+          <span className="text-[#d29922] text-sm flex items-center gap-2">
+            <span className="font-mono text-xs">●</span> Uncommitted changes only
+          </span>
+          {onClearCommit && (
+            <button
+              className="text-[#58a6ff] hover:text-[#79c0ff] text-sm ml-auto"
+              onClick={onClearCommit}
+            >
+              Show full branch diff →
+            </button>
+          )}
         </div>
       )}
       {totals.files > 0 && (

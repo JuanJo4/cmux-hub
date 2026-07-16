@@ -414,6 +414,30 @@ export function createAppConfig(deps: AppDeps) {
       },
     },
 
+    // Working-tree changes only (git diff HEAD + untracked), regardless of
+    // branch. Unlike /api/diff/auto, this never widens the base to the
+    // merge-base with the default branch, so on a feature branch it shows
+    // only what is uncommitted rather than the whole branch/PR diff.
+    "/api/diff/uncommitted": {
+      async GET(req: Request) {
+        const secErr = validateRequest(req, securityConfig);
+        if (secErr) return secErr;
+        const ctx = resolveProject(req);
+        if (ctx instanceof Response) return ctx;
+        try {
+          const [tracked, untracked] = await Promise.all([
+            ctx.git.getDiff(),
+            ctx.git.getUntrackedDiff(),
+          ]);
+          const raw = [tracked, untracked].filter(Boolean).join("\n");
+          const files = await processAndHighlightDiff(raw, ctx.git);
+          return jsonResponse({ diff: raw, files, base: "HEAD", includeUntracked: true });
+        } catch (e) {
+          return errorResponse(e instanceof Error ? e.message : "Unknown error");
+        }
+      },
+    },
+
     "/api/diff/files": {
       async GET(req: Request) {
         const secErr = validateRequest(req, securityConfig);
