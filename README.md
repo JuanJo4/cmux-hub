@@ -2,6 +2,171 @@
 
 A browser-based diff viewer for [cmux](https://cmux.dev). See what changed at a glance — syntax-highlighted diffs, inline review comments, commit history, GitHub PR status, and custom toolbar actions, all streamed in real time via WebSocket.
 
+> **Fork note (`local-hub` branch):** this fork adds a persistent, harness-agnostic
+> **hub mode** — one local server that lists all projects with active agent
+> sessions and shows each one's diff. See [Hub mode](#hub-mode-local-fork) below.
+> `main` tracks the original upstream project.
+
+## Hub mode (local fork)
+
+Hub mode runs one long-lived server (default port `4700`) instead of one server
+per session. Sessions from **any** harness (Claude Code, or anything that can
+run a curl command) register themselves, and the browser UI shows a live
+project list; clicking a project opens its diff.
+
+```bash
+bun install
+bun run hub            # start the hub at http://127.0.0.1:4700
+bun run dev:hub        # same, with hot reload for development
+```
+
+### What's different from upstream
+
+- **Project list** at `/` — projects appear when a session registers, are
+  marked _inactive_ when it ends (they linger for 24h or until dismissed with ✕),
+  and persist across hub restarts (`~/.config/cmux-hub/projects.json`).
+- **Line counts** — total `+/−` added/deleted lines per diff and per file.
+- **Word-level diff emphasis** — the exact words that changed get a darker
+  tint, GitHub-style.
+- **PR link** — when the current branch has a PR, a state chip linking to it
+  shows in the toolbar and in the project list.
+- **Default actions** are `Commit & Push` and `Create PR`, delivered to the
+  agent session as prompts (custom actions still come from
+  `.claude/cmux-hub.json` or `.cmux-hub/actions.json` in the project, falling
+  back to `--actions <file>` passed to the hub).
+- **Clipboard fallback** — inline comments and toolbar actions paste into the
+  cmux terminal when the session registered one; otherwise the text is copied
+  to your clipboard (with a toast) so you can paste it into whatever session
+  is active.
+
+### Registering sessions
+
+The hub learns about "active sessions" via a tiny HTTP API — no plugin needed:
+
+| Endpoint                        | Body                                           | Effect                          |
+| ------------------------------- | ---------------------------------------------- | ------------------------------- |
+| `POST /api/projects/register`   | `{ "cwd", "name?", "harness?", "surfaceId?" }` | Add/activate a project          |
+| `POST /api/projects/unregister` | `{ "cwd" }` or `{ "id" }`                      | Mark inactive (lingers in list) |
+| `POST /api/projects/heartbeat`  | `{ "cwd" }` or `{ "id" }`                      | Refresh `lastSeenAt`            |
+| `POST /api/projects/dismiss`    | `{ "id" }`                                     | Remove from the list            |
+
+**Claude Code** — add to `~/.claude/settings.json` (or a project's
+`.claude/settings.json`):
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -s -m 2 -X POST http://127.0.0.1:4700/api/projects/register -H 'Content-Type: application/json' -d \"{\\\"cwd\\\": \\\"$PWD\\\", \\\"harness\\\": \\\"claude-code\\\", \\\"surfaceId\\\": \\\"$CMUX_SURFACE_ID\\\"}\" || true"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -s -m 2 -X POST http://127.0.0.1:4700/api/projects/unregister -H 'Content-Type: application/json' -d \"{\\\"cwd\\\": \\\"$PWD\\\"}\" || true"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+`surfaceId` is optional — set it only when the session runs inside cmux so
+comments/actions can be pasted straight into that terminal. Any other harness
+just needs to run the same two curl commands at session start/end (that's the
+point: manual per-harness setup, no plugin coupling).
+
+Lifecycle notes:
+
+- Git worktrees are first-class: register whatever directory the session runs
+  in, including `.claude/worktrees/*` checkouts.
+- If a project's directory disappears (e.g. a worktree cleaned up on session
+  exit, before the SessionEnd hook could unregister), the entry is removed
+  automatically — on the next list view and on the hourly sweep.
+- If a session dies without unregistering, its project is demoted to
+  _inactive_ after 24h without a register/heartbeat signal (watchers and PR
+  polling stop). Long-lived sessions can `POST /api/projects/heartbeat`
+  periodically to stay active.
+- Inactive projects are pruned 24h after they became inactive, or immediately
+  via ✕ in the UI.
+
+Security model (hub mode):
+
+- Registration endpoints (`register`/`unregister`/`heartbeat`) only accept
+  non-browser clients — requests carrying `Origin`/`Sec-Fetch-Site` headers
+  are rejected, so a malicious localhost web page cannot register arbitrary
+  repos to read their diffs.
+- Hub mode restricts allowed origins to the hub's own origin (single-project
+  mode keeps the any-localhost-port allowance needed for preview pages).
+- `type: "shell"` actions in a repo's own `.claude/cmux-hub.json` /
+  `.cmux-hub/actions.json` are **ignored** (they would execute on the server
+  from repo-controlled files). Start the hub with
+  `--allow-project-shell-actions` if you want them, or define shell actions in
+  the hub-level `--actions` file, which is always trusted.
+- Register only repos you actually work in: running git in a repo executes
+  repo-controlled config like `core.fsmonitor` — the same exposure your shell
+  and agent already have in that directory, but worth knowing.
+
+To keep the hub running permanently on macOS, either leave `bun run hub` in a
+terminal or wrap it in a `launchd` agent.
+
+### Optional: a friendly local domain (`http://hub.diff`)
+
+If you'd rather open `http://hub.diff` than `http://127.0.0.1:4700`, front the hub
+with a small reverse proxy. A plain `/etc/hosts` alias is **not** enough on its own:
+the hub's DNS-rebinding and strict-origin defenses (see [Security](#security)) reject
+any request whose `Host` isn't `localhost`/`127.0.0.1` or whose `Origin` isn't the
+hub's own origin — so a custom hostname gets a `403` on the first request, and live
+updates (`/ws`) and comments/actions break. The proxy fixes this by rewriting the
+`Host` and `Origin` headers back to what the hub expects. [Caddy](https://caddyserver.com)
+keeps this to a few lines (it also upgrades the `/ws` WebSocket transparently).
+
+1. **Point the name at loopback** — add to `/etc/hosts` (needs `sudo` to edit):
+
+   ```
+   127.0.0.1  hub.diff
+   ```
+
+   Any made-up TLD works, since the name resolves locally. `.diff` is memorable for a
+   diff viewer; if you want a TLD that can never collide with a real one, `.test` is
+   reserved by the IETF for exactly this.
+
+2. **Install Caddy** — `brew install caddy`.
+
+3. **Write a Caddyfile** (e.g. `~/hub-diff.Caddyfile`):
+
+   ```
+   http://hub.diff {
+       reverse_proxy 127.0.0.1:4700 {
+           header_up Host   127.0.0.1:4700
+           header_up Origin http://127.0.0.1:4700
+       }
+   }
+   ```
+
+   - `http://` forces plain HTTP on port 80 (no TLS cert to manage for a local name).
+   - `header_up Host …` — Caddy passes the client's `Host` through by default; this
+     overrides it so the hub's Host check passes.
+   - `header_up Origin …` — makes POST writes (comments/actions) **and** the `/ws`
+     upgrade satisfy the strict-origin check. This line is the one you can't skip.
+
+4. **Run the proxy** (port 80 needs elevated privileges on macOS):
+
+   ```bash
+   sudo caddy run --config ~/hub-diff.Caddyfile
+   ```
+
+5. **Start the hub as usual** (`bun run hub`) and open **`http://hub.diff`** — no port.
+
 https://github.com/user-attachments/assets/f5fbfd8b-6473-4f83-882e-967a5ca33205
 
 ![cmux-hub with cmux](docs/img/cmux-hub-overview.png)

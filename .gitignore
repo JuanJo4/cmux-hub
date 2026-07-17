@@ -40,3 +40,6 @@ test-results
 
 # compiled binary
 /cmux-hub
+
+# local hub.diff reverse-proxy config (personal, used from repo root)
+/hub-diff.Caddyfile

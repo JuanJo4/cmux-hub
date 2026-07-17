@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useTransition, useRef } from "react";
+import { getApiProject } from "../lib/api.ts";
 
 /**
  * Generic hook for fetching data with WebSocket-triggered refetch.
@@ -24,6 +25,11 @@ import { useState, useEffect, useCallback, useTransition, useRef } from "react";
 type UseWSFetchOptions<T> = {
   fetch: () => Promise<T>;
   wsMessageType?: string | string[];
+  /**
+   * Refetch on project-tagged events from ANY project (hub project list).
+   * By default, tagged events only match the project currently being viewed.
+   */
+  matchAllProjects?: boolean;
 };
 
 type UseWSFetchResult<T> = {
@@ -37,6 +43,7 @@ type UseWSFetchResult<T> = {
 export function useWSFetch<T>({
   fetch: fetchFn,
   wsMessageType,
+  matchAllProjects = false,
 }: UseWSFetchOptions<T>): UseWSFetchResult<T> {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
@@ -74,7 +81,9 @@ export function useWSFetch<T>({
   useEffect(() => {
     if (types.length === 0) return;
     const handler = (e: Event) => {
-      const msg = (e as CustomEvent).detail as { type: string };
+      const msg = (e as CustomEvent).detail as { type: string; project?: string };
+      // Hub mode: project-tagged events only apply to the project being viewed
+      if (!matchAllProjects && msg.project && msg.project !== getApiProject()) return;
       if (types.includes(msg.type)) {
         refetch();
       }
